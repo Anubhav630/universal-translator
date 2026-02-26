@@ -1,15 +1,3 @@
-/**
- * RunAnywhere SDK initialization and model catalog.
- *
- * This module:
- * 1. Initializes the core SDK (TypeScript-only, no WASM)
- * 2. Registers the LlamaCPP backend (loads LLM/VLM WASM)
- * 3. Registers the ONNX backend (sherpa-onnx — STT/TTS/VAD)
- * 4. Registers the model catalog and wires up VLM worker
- *
- * Import this module once at app startup.
- */
-
 import {
   RunAnywhere,
   SDKEnvironment,
@@ -51,7 +39,10 @@ const MODELS: CompactModelDef[] = [
     modality: ModelCategory.Multimodal,
     memoryRequirement: 500_000_000,
   },
-  // STT (sherpa-onnx archive)
+  // STT — English-only (whisper-tiny.en).
+  // RunAnywhere only hosts this model in their HuggingFace org. A multilingual
+  // model does not yet exist under their namespace, so speech input is
+  // English-only for now. Non-English audio will be transcribed inaccurately.
   {
     id: 'sherpa-onnx-whisper-tiny.en',
     name: 'Whisper Tiny English (ONNX)',
@@ -115,6 +106,11 @@ export async function initSDK(): Promise<void> {
       loadModel: (params) => VLMWorkerBridge.shared.loadModel(params),
       unloadModel: () => VLMWorkerBridge.shared.unloadModel(),
     });
+
+    // Step 5: Pre-initialize the VLM worker process so it's alive and ready
+    // when ModelManager.loadModel() is called later. Without this, the worker
+    // thread is never spawned and VLMWorkerBridge.loadModel() silently fails.
+    await VLMWorkerBridge.shared.init();
   })();
 
   return _initPromise;

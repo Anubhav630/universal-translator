@@ -1,6 +1,6 @@
 import type { LoaderState } from '../hooks/useModelLoader';
 
-interface Props {
+interface ModelBannerProps {
   state: LoaderState;
   progress: number;
   error: string | null;
@@ -8,30 +8,32 @@ interface Props {
   label: string;
 }
 
-export function ModelBanner({ state, progress, error, onLoad, label }: Props) {
+export function ModelBanner({ state, progress, error, label }: ModelBannerProps) {
   if (state === 'ready') return null;
+  if (state === 'idle') return null;
 
   return (
     <div className="model-banner">
-      {state === 'idle' && (
-        <>
-          <span>No {label} model loaded.</span>
-          <button className="btn btn-sm" onClick={onLoad}>Download &amp; Load</button>
-        </>
-      )}
       {state === 'downloading' && (
         <>
-          <span>Downloading {label} model... {(progress * 100).toFixed(0)}%</span>
+          <span>📥 Downloading {label} model...</span>
           <div className="progress-bar">
             <div className="progress-fill" style={{ width: `${progress * 100}%` }} />
           </div>
+          <span>{(progress * 100).toFixed(0)}%</span>
         </>
       )}
-      {state === 'loading' && <span>Loading {label} model into engine...</span>}
-      {state === 'error' && (
+
+      {state === 'loading' && (
         <>
-          <span className="error-text">Error: {error}</span>
-          <button className="btn btn-sm" onClick={onLoad}>Retry</button>
+          <span>⚙️ Loading {label} model...</span>
+          <div className="spinner-small" />
+        </>
+      )}
+
+      {state === 'error' && error && (
+        <>
+          <span className="error-text">❌ {error}</span>
         </>
       )}
     </div>

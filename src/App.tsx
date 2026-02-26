@@ -1,67 +1,101 @@
 import { useState, useEffect } from 'react';
 import { initSDK, getAccelerationMode } from './runanywhere';
-import { ChatTab } from './components/ChatTab';
-import { VisionTab } from './components/VisionTab';
-import { VoiceTab } from './components/VoiceTab';
+import { clearStaleModels } from './clearStaleModels';
+import { TranslatorTab } from './components/TranslatorTab';
+import { AlphabetBackground } from './components/AlphabetBackground';
 
-type Tab = 'chat' | 'vision' | 'voice';
+type AppState = 'checking' | 'needs-reload' | 'loading' | 'ready' | 'error';
 
 export function App() {
-  const [sdkReady, setSdkReady] = useState(false);
+  const [appState, setAppState] = useState<AppState>('checking');
   const [sdkError, setSdkError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>('chat');
+  const [accel, setAccel] = useState<string | null>(null);
 
   useEffect(() => {
-    initSDK()
-      .then(() => setSdkReady(true))
-      .catch((err) => setSdkError(err instanceof Error ? err.message : String(err)));
+    // Require Cross-Origin Isolation for SharedArrayBuffer (ONNX WASM backend)
+    if (!window.crossOriginIsolated) {
+      setAppState('needs-reload');
+      return;
+    }
+
+    sessionStorage.removeItem('coi-reload');
+
+    (async () => {
+      // Remove any stale OPFS model entries from previous builds before the
+      // SDK tries to load them (prevents 401 loops from renamed model IDs)
+      await clearStaleModels();
+
+      initSDK()
+        .then(() => {
+          setAccel(getAccelerationMode());
+          setAppState('ready');
+        })
+        .catch((err) => {
+          setSdkError(err instanceof Error ? err.message : String(err));
+          setAppState('error');
+        });
+    })();
   }, []);
 
-  if (sdkError) {
+  if (appState === 'checking') {
     return (
       <div className="app-loading">
-        <h2>SDK Error</h2>
-        <p className="error-text">{sdkError}</p>
+        <AlphabetBackground />
+        <div className="spinner" />
       </div>
     );
   }
 
-  if (!sdkReady) {
+  if (appState === 'needs-reload') {
     return (
       <div className="app-loading">
+        <AlphabetBackground />
+        <h2>🔄 One-Time Reload Required</h2>
+        <p style={{ maxWidth: 400, textAlign: 'center', marginBottom: '1.5rem' }}>
+          This page was loaded from cache without the security headers needed for
+          on-device AI. A single reload will fix it.
+        </p>
+        <button className="btn btn-primary btn-lg" onClick={() => window.location.reload()}>
+          Reload Now
+        </button>
+      </div>
+    );
+  }
+
+  if (appState === 'loading') {
+    return (
+      <div className="app-loading">
+        <AlphabetBackground />
         <div className="spinner" />
-        <h2>Loading RunAnywhere SDK...</h2>
+        <h2>Loading Universal Translator...</h2>
         <p>Initializing on-device AI engine</p>
       </div>
     );
   }
 
-  const accel = getAccelerationMode();
+  if (appState === 'error') {
+    return (
+      <div className="app-loading">
+        <h2>⚠️ Startup Error</h2>
+        <pre className="error-text" style={{ whiteSpace: 'pre-wrap', textAlign: 'left', maxWidth: 520 }}>
+          {sdkError}
+        </pre>
+      </div>
+    );
+  }
 
   return (
-    <div className="app">
-      <header className="app-header">
-        <h1>RunAnywhere AI</h1>
-        {accel && <span className="badge">{accel === 'webgpu' ? 'WebGPU' : 'CPU'}</span>}
-      </header>
-
-      <nav className="tab-bar">
-        <button className={activeTab === 'chat' ? 'active' : ''} onClick={() => setActiveTab('chat')}>
-          💬 Chat
-        </button>
-        <button className={activeTab === 'vision' ? 'active' : ''} onClick={() => setActiveTab('vision')}>
-          📷 Vision
-        </button>
-        <button className={activeTab === 'voice' ? 'active' : ''} onClick={() => setActiveTab('voice')}>
-          🎙️ Voice
-        </button>
-      </nav>
-
-      <main className="tab-content">
-        {activeTab === 'chat' && <ChatTab />}
-        {activeTab === 'vision' && <VisionTab />}
-        {activeTab === 'voice' && <VoiceTab />}
-      </main>
-    </div>
+    <>
+      <AlphabetBackground />
+      <div className="app">
+        <header className="app-header">
+          <h1>🌐 Universal Translator</h1>
+          {accel && <span className="badge">{accel === 'webgpu' ? 'WebGPU' : 'CPU'}</span>}
+        </header>
+        <main className="tab-content">
+          <TranslatorTab />
+        </main>
+      </div>
+    </>
   );
 }
