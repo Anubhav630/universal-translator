@@ -1,25 +1,74 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 
-// https://vitejs.dev/config/
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Copy RunAnywhere WASM binaries into dist/assets
+ * so Vercel can serve them in production.
+ */
+function copyWasmPlugin(): Plugin {
+  return {
+    name: 'copy-wasm',
+    writeBundle(options) {
+      const outDir = options.dir ?? path.resolve(__dirname, 'dist');
+      const assetsDir = path.join(outDir, 'assets');
+
+      fs.mkdirSync(assetsDir, { recursive: true });
+
+      // ---------- LlamaCpp ----------
+      const llamaDir = path.resolve(
+        __dirname,
+        'node_modules/@runanywhere/web-llamacpp/wasm'
+      );
+
+      const llamaFiles = [
+        'racommons-llamacpp.wasm',
+        'racommons-llamacpp.js',
+        'racommons-llamacpp-webgpu.wasm',
+        'racommons-llamacpp-webgpu.js',
+      ];
+
+      for (const file of llamaFiles) {
+        const src = path.join(llamaDir, file);
+        if (fs.existsSync(src)) {
+          fs.copyFileSync(src, path.join(assetsDir, file));
+          console.log(`✓ Copied ${file}`);
+        }
+      }
+
+      // ---------- Sherpa ONNX ----------
+      const sherpaDir = path.resolve(
+        __dirname,
+        'node_modules/@runanywhere/web-onnx/wasm/sherpa'
+      );
+
+      const sherpaOut = path.join(assetsDir, 'sherpa');
+      fs.mkdirSync(sherpaOut, { recursive: true });
+
+      if (fs.existsSync(sherpaDir)) {
+        for (const file of fs.readdirSync(sherpaDir)) {
+          fs.copyFileSync(
+            path.join(sherpaDir, file),
+            path.join(sherpaOut, file)
+          );
+          console.log(`✓ Copied sherpa/${file}`);
+        }
+      }
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), copyWasmPlugin()],
 
-  // ---------------------------------------------------------------------------
-  // Worker configuration
-  // ---------------------------------------------------------------------------
   worker: {
     format: 'es',
   },
 
-  // ---------------------------------------------------------------------------
-  // Dependency optimization
-  // ---------------------------------------------------------------------------
-  // RunAnywhere packages ship pre-built ES modules that dynamically import
-  // their own WASM files at runtime (e.g. racommons-llamacpp-webgpu.js).
-  // If Vite pre-bundles these packages it rewrites their internal import paths,
-  // breaking the dynamic WASM fetch. Excluding them forces Vite to serve the
-  // originals straight from node_modules untouched.
   optimizeDeps: {
     exclude: [
       '@runanywhere/web',
@@ -28,20 +77,10 @@ export default defineConfig({
     ],
   },
 
-  // ---------------------------------------------------------------------------
-  // Dev-server
-  // ---------------------------------------------------------------------------
   server: {
     headers: {
-      // Required for SharedArrayBuffer (multi-threaded WASM in ONNX backend)
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',
-    },
-    // Allow Vite to serve files directly out of node_modules so that the
-    // dynamically-imported WASM JS shims (e.g. racommons-llamacpp-webgpu.js)
-    // are reachable at their real paths.
-    fs: {
-      allow: ['..'],
     },
   },
 
@@ -51,4 +90,6 @@ export default defineConfig({
       'Cross-Origin-Embedder-Policy': 'require-corp',
     },
   },
+
+  assetsInclude: ['**/*.wasm'],
 });
